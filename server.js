@@ -1,3 +1,7 @@
+// ============================================================
+// GENIUS TALK - SERVEUR EXPRESS + WEBSOCKET (Render Ready)
+// ============================================================
+
 import express from "express";
 import { WebSocketServer } from "ws";
 import http from "http";
@@ -14,12 +18,14 @@ const clients = {};
 wss.on("connection", (ws) => {
   console.log("🟢 Nouvelle connexion WebSocket");
 
+  let currentPhone = null;
+
   ws.on("message", (message) => {
     try {
       const data = JSON.parse(message);
       console.log("📩 Reçu :", data);
 
-      // 1️⃣ Enregistrement utilisateur
+      // Enregistrement utilisateur
       if (data.type === "register") {
         if (!data.phone) {
           ws.send(
@@ -30,59 +36,74 @@ wss.on("connection", (ws) => {
           );
           return;
         }
-        clients[data.phone] = ws;
-        ws.phone = data.phone;
-        console.log(`✅ Utilisateur enregistré : ${data.phone}`);
+
+        currentPhone = data.phone;
+        clients[currentPhone] = ws;
+        ws.phone = currentPhone;
+
+        console.log(`✅ Utilisateur enregistré : ${currentPhone}`);
         ws.send(
           JSON.stringify({
             type: "info",
-            text: `Inscription réussie pour ${data.phone}`,
+            text: `Inscription réussie pour ${currentPhone}`,
           })
         );
         return;
       }
 
-      // 2️⃣ Envoi de message
+      //Envoi de message (broadcast automatique)
       if (data.type === "message") {
-        const { from, to, text } = data;
+        const { text } = data;
 
-        if (!from || !to || !text) {
+        if (!text) {
           ws.send(
             JSON.stringify({
               type: "error",
-              text: "Message invalide. Les champs 'from', 'to' et 'text' sont requis.",
+              text: "Message invalide. Le champ 'text' est requis.",
             })
           );
           return;
         }
 
-        const recipient = clients[to];
-        if (recipient) {
-          recipient.send(
-            JSON.stringify({
-              type: "message",
-              from,
-              text,
-            })
-          );
-          ws.send(
-            JSON.stringify({
-              type: "reply",
-              text: `Message envoyé à ${to}`,
-            })
-          );
-        } else {
+        const connectedUsers = Object.keys(clients).filter(
+          (num) => num !== currentPhone
+        );
+
+        if (connectedUsers.length === 0) {
           ws.send(
             JSON.stringify({
               type: "error",
-              text: `Le destinataire ${to} n’est pas en ligne.`,
+              text: "Aucun autre utilisateur n'est en ligne.",
             })
           );
+          return;
         }
+
+        //Envoi à tous les autres connectés
+        connectedUsers.forEach((num) => {
+          const recipient = clients[num];
+          if (recipient && recipient.readyState === ws.OPEN) {
+            recipient.send(
+              JSON.stringify({
+                type: "message",
+                from: currentPhone,
+                text,
+              })
+            );
+          }
+        });
+
+        // Confirmation à l'expéditeur
+        ws.send(
+          JSON.stringify({
+            type: "reply",
+            text: `Message envoyé à ${connectedUsers.length} utilisateur(s).`,
+          })
+        );
         return;
       }
 
-      // 3️⃣ Message inconnu
+      // Message inconnu
       ws.send(
         JSON.stringify({
           type: "error",
@@ -100,10 +121,11 @@ wss.on("connection", (ws) => {
     }
   });
 
+  // Déconnexion
   ws.on("close", () => {
-    if (ws.phone && clients[ws.phone]) {
-      delete clients[ws.phone];
-      console.log(`🔴 Déconnexion : ${ws.phone}`);
+    if (currentPhone && clients[currentPhone]) {
+      delete clients[currentPhone];
+      console.log(`🔴 Déconnexion : ${currentPhone}`);
     } else {
       console.log("🔴 Connexion WebSocket fermée (non enregistrée)");
     }
@@ -112,7 +134,7 @@ wss.on("connection", (ws) => {
 
 // --- Route simple pour test HTTP ---
 app.get("/", (req, res) => {
-  res.send("🌐 Serveur Genius Talk WebSocket actif !");
+  res.send("🌐 Serveur Genius Talk WebSocket actif et en ligne !");
 });
 
 // --- Lancement du serveur ---
