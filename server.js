@@ -1,6 +1,7 @@
 // ============================================================
 // GENIUS TALK - SERVEUR EXPRESS + WEBSOCKET
 // ============================================================
+
 import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
@@ -74,7 +75,6 @@ wss.on("connection", (ws) => {
   });
 });
 
-// --- Vérification périodique des connexions WebSocket ---
 setInterval(() => {
   wss.clients.forEach((ws) => {
     if (!ws.isAlive) return ws.terminate();
@@ -83,9 +83,5 @@ setInterval(() => {
   });
 }, 30000);
 
-server.keepAliveTimeout = 120000; // 2 minutes
-server.headersTimeout = 125000;   // légèrement supérieur pour éviter timeouts
-
-// --- Lancement du serveur ---
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log(`🚀 Serveur Genius Talk prêt sur le port ${PORT}`));nius Talk prêt sur le port ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 Serveur Genius Talk prêt sur le port ${PORT}`));
