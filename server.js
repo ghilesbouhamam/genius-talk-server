@@ -1,17 +1,17 @@
 // ============================================================
-// GENIUS TALK - SERVEUR WEBSOCKET AVEC ROUTAGE PAR DESTINATAIRE
+// GENIUS TALK - SERVEUR EXPRESS + WEBSOCKET 
 // ============================================================
 
 import express from "express";
 import { WebSocketServer } from "ws";
 import http from "http";
 
-// --- Initialisation du serveur Express ---
+// --- Initialisation du serveur HTTP + WebSocket ---
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// --- Liste des clients connectés (clé = numéro de téléphone) ---
+// --- Liste des utilisateurs connectés : { "0600000000": WebSocket } ---
 const clients = {};
 
 // --- Connexion WebSocket ---
@@ -23,9 +23,9 @@ wss.on("connection", (ws) => {
   ws.on("message", (message) => {
     try {
       const data = JSON.parse(message);
-      console.log("📩 Reçu :", data);
+      console.log("📩 Message reçu :", data);
 
-      // 1️⃣ Enregistrement de l'utilisateur
+      // === Étape 1 : Enregistrement utilisateur ===
       if (data.type === "register") {
         if (!data.phone) {
           ws.send(
@@ -42,6 +42,7 @@ wss.on("connection", (ws) => {
         ws.phone = currentPhone;
 
         console.log(`✅ Utilisateur enregistré : ${currentPhone}`);
+
         ws.send(
           JSON.stringify({
             type: "info",
@@ -51,7 +52,7 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      // 2️⃣ Envoi de message ciblé
+      // === Étape 2 : Envoi de message à un destinataire ===
       if (data.type === "message") {
         const { from, to, text } = data;
 
@@ -59,7 +60,7 @@ wss.on("connection", (ws) => {
           ws.send(
             JSON.stringify({
               type: "error",
-              text: "Champs manquants : 'from', 'to' et 'text' sont requis.",
+              text: "Champs requis manquants : from, to ou text.",
             })
           );
           return;
@@ -67,32 +68,38 @@ wss.on("connection", (ws) => {
 
         const recipient = clients[to];
 
-        if (recipient && recipient.readyState === ws.OPEN) {
-          recipient.send(
-            JSON.stringify({
-              type: "message",
-              from,
-              text,
-            })
-          );
-          ws.send(
-            JSON.stringify({
-              type: "reply",
-              text: `Message envoyé à ${to}.`,
-            })
-          );
-        } else {
+        if (!recipient || recipient.readyState !== ws.OPEN) {
           ws.send(
             JSON.stringify({
               type: "error",
-              text: `Le destinataire ${to} n’est pas connecté.`,
+              text: `Le destinataire ${to} n'est pas en ligne.`,
             })
           );
+          return;
         }
+
+        // Envoi du message au destinataire
+        recipient.send(
+          JSON.stringify({
+            type: "message",
+            from,
+            text,
+          })
+        );
+
+        // Réponse de confirmation à l’expéditeur
+        ws.send(
+          JSON.stringify({
+            type: "reply",
+            text: `Message envoyé à ${to}.`,
+          })
+        );
+
+        console.log(`📤 ${from} → ${to} : ${text}`);
         return;
       }
 
-      // 3️⃣ Message inconnu
+      // === Étape 3 : Gestion des types inconnus ===
       ws.send(
         JSON.stringify({
           type: "error",
@@ -100,7 +107,7 @@ wss.on("connection", (ws) => {
         })
       );
     } catch (err) {
-      console.error("⚠️ Erreur JSON :", err);
+      console.error("⚠️ Erreur de traitement :", err);
       ws.send(
         JSON.stringify({
           type: "error",
@@ -110,22 +117,24 @@ wss.on("connection", (ws) => {
     }
   });
 
-  // 4️⃣ Déconnexion
+  // === Étape 4 : Déconnexion ===
   ws.on("close", () => {
     if (currentPhone && clients[currentPhone]) {
       delete clients[currentPhone];
       console.log(`🔴 Déconnexion : ${currentPhone}`);
+    } else {
+      console.log("🔴 Connexion fermée (non enregistrée)");
     }
   });
 });
 
-// --- Route HTTP simple pour test ---
+// --- Route de test HTTP ---
 app.get("/", (req, res) => {
-  res.send("🌐 Serveur Genius Talk WebSocket actif !");
+  res.send("🌐 Serveur Genius Talk WebSocket en ligne !");
 });
 
-// --- Démarrage du serveur ---
+// --- Lancement du serveur ---
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
-  console.log(`🌐 Serveur Genius Talk en écoute sur le port ${PORT}`);
+  console.log(`🚀 Serveur Genius Talk en écoute sur le port ${PORT}`);
 });
