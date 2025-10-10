@@ -3,29 +3,53 @@
 // ============================================================
 
 import express from "express";
-import { WebSocketServer } from "ws";
 import http from "http";
+import { WebSocketServer } from "ws";
 
 // --- Initialisation du serveur HTTP + WebSocket ---
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// --- Liste des utilisateurs connectés : { "0600000000": WebSocket } ---
-const clients = {};
+// --- Liste des utilisateurs connectés ---
+const clients = {}; // { "0600000000": WebSocket }
+
+// --- Middleware de sécurité ---
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
+
+// --- Route de test HTTP ---
+app.get("/", (req, res) => {
+  res.send("🌐 Serveur Genius Talk WebSocket opérationnel !");
+});
+
+// --- Route pour visualiser les utilisateurs connectés ---
+app.get("/users", (req, res) => {
+  res.json({ connectedUsers: Object.keys(clients) });
+});
 
 // --- Connexion WebSocket ---
 wss.on("connection", (ws) => {
   console.log("🟢 Nouvelle connexion WebSocket");
-
   let currentPhone = null;
+
+  ws.isAlive = true;
+
+  // Heartbeat pour éviter la fermeture automatique
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
 
   ws.on("message", (message) => {
     try {
       const data = JSON.parse(message);
       console.log("📩 Message reçu :", data);
 
-      // === Étape 1 : Enregistrement utilisateur ===
+      // === Enregistrement utilisateur ===
       if (data.type === "register") {
         if (!data.phone) {
           ws.send(
@@ -52,7 +76,7 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      // === Étape 2 : Envoi de message à un destinataire ===
+      // === Envoi de message à un destinataire ===
       if (data.type === "message") {
         const { from, to, text } = data;
 
@@ -78,7 +102,7 @@ wss.on("connection", (ws) => {
           return;
         }
 
-        // Envoi du message au destinataire
+        // Envoi du message
         recipient.send(
           JSON.stringify({
             type: "message",
@@ -87,7 +111,6 @@ wss.on("connection", (ws) => {
           })
         );
 
-        // Réponse de confirmation à l’expéditeur
         ws.send(
           JSON.stringify({
             type: "reply",
@@ -99,7 +122,7 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      // === Étape 3 : Gestion des types inconnus ===
+      // === Type inconnu ===
       ws.send(
         JSON.stringify({
           type: "error",
@@ -107,7 +130,7 @@ wss.on("connection", (ws) => {
         })
       );
     } catch (err) {
-      console.error("⚠️ Erreur de traitement :", err);
+      console.error("⚠️ Erreur de parsing JSON :", err);
       ws.send(
         JSON.stringify({
           type: "error",
@@ -117,7 +140,7 @@ wss.on("connection", (ws) => {
     }
   });
 
-  // === Étape 4 : Déconnexion ===
+  // === Déconnexion ===
   ws.on("close", () => {
     if (currentPhone && clients[currentPhone]) {
       delete clients[currentPhone];
@@ -128,13 +151,20 @@ wss.on("connection", (ws) => {
   });
 });
 
-// --- Route de test HTTP ---
-app.get("/", (req, res) => {
-  res.send("🌐 Serveur Genius Talk WebSocket en ligne !");
-});
+// --- Vérification périodique des connexions WebSocket (ping/pong) ---
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) {
+      console.log("⛔ Connexion inerte supprimée");
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000); // toutes les 30 secondes
 
 // --- Lancement du serveur ---
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
-  console.log(`🚀 Serveur Genius Talk en écoute sur le port ${PORT}`);
+  console.log(`🚀 Serveur Genius Talk prêt sur le port ${PORT}`);
 });
