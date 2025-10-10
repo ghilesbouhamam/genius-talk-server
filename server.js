@@ -1,5 +1,5 @@
 // ============================================================
-// GENIUS TALK - SERVEUR EXPRESS + WEBSOCKET (Render Ready)
+// GENIUS TALK - SERVEUR WEBSOCKET AVEC ROUTAGE PAR DESTINATAIRE
 // ============================================================
 
 import express from "express";
@@ -25,7 +25,7 @@ wss.on("connection", (ws) => {
       const data = JSON.parse(message);
       console.log("📩 Reçu :", data);
 
-      // Enregistrement utilisateur
+      // 1️⃣ Enregistrement de l'utilisateur
       if (data.type === "register") {
         if (!data.phone) {
           ws.send(
@@ -51,59 +51,48 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      //Envoi de message (broadcast automatique)
+      // 2️⃣ Envoi de message ciblé
       if (data.type === "message") {
-        const { text } = data;
+        const { from, to, text } = data;
 
-        if (!text) {
+        if (!from || !to || !text) {
           ws.send(
             JSON.stringify({
               type: "error",
-              text: "Message invalide. Le champ 'text' est requis.",
+              text: "Champs manquants : 'from', 'to' et 'text' sont requis.",
             })
           );
           return;
         }
 
-        const connectedUsers = Object.keys(clients).filter(
-          (num) => num !== currentPhone
-        );
+        const recipient = clients[to];
 
-        if (connectedUsers.length === 0) {
+        if (recipient && recipient.readyState === ws.OPEN) {
+          recipient.send(
+            JSON.stringify({
+              type: "message",
+              from,
+              text,
+            })
+          );
+          ws.send(
+            JSON.stringify({
+              type: "reply",
+              text: `Message envoyé à ${to}.`,
+            })
+          );
+        } else {
           ws.send(
             JSON.stringify({
               type: "error",
-              text: "Aucun autre utilisateur n'est en ligne.",
+              text: `Le destinataire ${to} n’est pas connecté.`,
             })
           );
-          return;
         }
-
-        //Envoi à tous les autres connectés
-        connectedUsers.forEach((num) => {
-          const recipient = clients[num];
-          if (recipient && recipient.readyState === ws.OPEN) {
-            recipient.send(
-              JSON.stringify({
-                type: "message",
-                from: currentPhone,
-                text,
-              })
-            );
-          }
-        });
-
-        // Confirmation à l'expéditeur
-        ws.send(
-          JSON.stringify({
-            type: "reply",
-            text: `Message envoyé à ${connectedUsers.length} utilisateur(s).`,
-          })
-        );
         return;
       }
 
-      // Message inconnu
+      // 3️⃣ Message inconnu
       ws.send(
         JSON.stringify({
           type: "error",
@@ -111,7 +100,7 @@ wss.on("connection", (ws) => {
         })
       );
     } catch (err) {
-      console.error("⚠️ Erreur de traitement :", err);
+      console.error("⚠️ Erreur JSON :", err);
       ws.send(
         JSON.stringify({
           type: "error",
@@ -121,23 +110,21 @@ wss.on("connection", (ws) => {
     }
   });
 
-  // Déconnexion
+  // 4️⃣ Déconnexion
   ws.on("close", () => {
     if (currentPhone && clients[currentPhone]) {
       delete clients[currentPhone];
       console.log(`🔴 Déconnexion : ${currentPhone}`);
-    } else {
-      console.log("🔴 Connexion WebSocket fermée (non enregistrée)");
     }
   });
 });
 
-// --- Route simple pour test HTTP ---
+// --- Route HTTP simple pour test ---
 app.get("/", (req, res) => {
-  res.send("🌐 Serveur Genius Talk WebSocket actif et en ligne !");
+  res.send("🌐 Serveur Genius Talk WebSocket actif !");
 });
 
-// --- Lancement du serveur ---
+// --- Démarrage du serveur ---
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log(`🌐 Serveur Genius Talk en écoute sur le port ${PORT}`);
